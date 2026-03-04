@@ -13,7 +13,7 @@ The only requirement is **Docker** with the Compose plugin. No Node.js, no npm, 
 ```bash
 git clone <repo>
 cd linuxsandbox
-docker-compose up --build
+docker-compose up -d --build
 ```
 
 Open **http://localhost** (port 80, served via nginx).
