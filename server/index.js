@@ -104,12 +104,12 @@ function parseMemory(str) {
 async function cleanupSession(sessionId) {
   const session = sessions.get(sessionId);
   if (!session) return;
-  clearTimeout(session.timer);
   try {
     if (session.stream) session.stream.destroy();
     if (session.container) {
       await session.container.stop({ t: 2 }).catch(() => {});
-      await session.container.remove({ force: true }).catch(() => {});
+      // force:true also removes the container even if stop fails
+      await session.container.remove({ force: true }).catch(e => console.log('[rm container]', e.message));
     }
     if (session.volumeName) {
       await docker.getVolume(session.volumeName).remove().catch(e => console.log('[vol]', e.message));
@@ -152,7 +152,17 @@ app.get('/api/images', async (req, res) => {
 
 app.delete('/api/images/:id', async (req, res) => {
   try {
-    await docker.getImage(decodeURIComponent(req.params.id)).remove({ force: false });
+    const imageId = decodeURIComponent(req.params.id);
+    // Find and remove any stopped containers using this image before removing the image
+    const containers = await docker.listContainers({ all: true });
+    for (const c of containers) {
+      if (c.ImageID === imageId || c.Image === imageId || (c.ImageID && c.ImageID.startsWith(imageId))) {
+        if (c.State !== 'running') {
+          await docker.getContainer(c.Id).remove({ force: true }).catch(() => {});
+        }
+      }
+    }
+    await docker.getImage(imageId).remove({ force: false });
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -161,12 +171,19 @@ app.delete('/api/images', async (req, res) => {
   try {
     const activeImages = new Set([...sessions.values()].map(s => s.image));
     const images = await docker.listImages({ all: false });
+    const allContainers = await docker.listContainers({ all: true });
     const removed = [], errors = [];
     let freedBytes = 0;
     for (const img of images) {
       const tag = (img.RepoTags || [])[0] || '';
       if (activeImages.has(tag)) continue;
       try {
+        // Remove any stopped containers referencing this image first
+        for (const c of allContainers) {
+          if ((c.ImageID === img.Id || c.Image === tag) && c.State !== 'running') {
+            await docker.getContainer(c.Id).remove({ force: true }).catch(() => {});
+          }
+        }
         await docker.getImage(img.Id).remove({ force: false });
         removed.push(tag || img.Id.slice(0, 12));
         freedBytes += img.Size;
@@ -318,15 +335,10 @@ wss.on('connection', (ws) => {
 
         stream.on('error', (err) => console.error('[stream]', err.message));
 
-        const timer = setTimeout(() => {
-          ws.send(JSON.stringify({ type: 'timeout', message: 'Session timed out after 10 minutes.' }));
-          cleanupSession(sessionId);
-        }, CONFIG.SESSION_TIMEOUT_MS);
-
         sessions.set(sessionId, {
           container, stream, ws,
           distro, version, image, volumeName,
-          created: Date.now(), timer,
+          created: Date.now(),
         });
 
         ws.send(JSON.stringify({ type: 'ready', sessionId, image, shell, volumeName, fallback, note }));

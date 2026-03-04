@@ -1,47 +1,14 @@
-# 🐧 LinuxSandbox
+# LinuxSandbox
 
-> Real Linux distros. Real terminal. Right in your browser.
+Real Linux distros. Real terminal. Right in your browser.
 
-Spin up isolated Docker containers for 50+ Linux distributions directly from a web UI. Every command runs for real inside a sandboxed container — no simulation, no fakery.
-
----
-
-## ✨ Features
-
-- **50+ Linux distributions** with version selection
-- **Real Docker containers** — actual shell execution
-- **xterm.js terminal** — full-featured terminal emulator in browser
-- **WebSocket streaming** — real-time bidirectional I/O
-- **Sandbox security** — network disabled, memory/CPU capped, capabilities dropped
-- **Auto cleanup** — 10-minute session timeout, containers auto-removed
-- **Live search & filter** by family, release type, name
+Spin up isolated Docker containers for 50+ Linux distributions directly from a web UI. Every command runs inside a real sandboxed container — no simulation, no emulation (where a native image exists).
 
 ---
 
-## 🏗️ Architecture
+## Quick Start
 
-```
-Browser (xterm.js)
-    │  WebSocket (bidirectional)
-    ▼
-Node.js Server (Express + ws)
-    │  Dockerode (Docker API)
-    ▼
-Docker Daemon
-    │
-    ▼
-Sandboxed Container (ubuntu, alpine, arch, etc.)
-```
-
----
-
-## 🚀 Quick Start
-
-### Prerequisites
-- **Docker** installed and running
-- **Node.js 18+**
-
-### Option A — Run with Docker Compose (recommended)
+The only requirement is **Docker** with the Compose plugin. No Node.js, no npm, no manual installs.
 
 ```bash
 git clone <repo>
@@ -49,142 +16,180 @@ cd linuxsandbox
 docker-compose up --build
 ```
 
-Open http://localhost:3000
+Open **http://localhost** (port 80, served via nginx).
 
-### Option B — Run locally
-
-```bash
-# Install dependencies
-cd server
-npm install
-
-# Start server
-npm start
-```
-
-Open http://localhost:3000
+That's it. Everything — the Node.js runtime, npm dependencies, the frontend — is built inside the Docker image.
 
 ---
 
-## ⚙️ Configuration
+## Architecture
 
-Edit `server/.env` or set environment variables:
+```
+Browser (xterm.js)
+    │  WebSocket  (ws://)
+    ▼
+nginx  →  Node.js / Express  (port 3000, internal only)
+               │  Dockerode (Unix socket)
+               ▼
+         Docker Daemon
+               │
+               ▼
+    Sandbox Container  (sibling container, NetworkMode: none)
+    + Named Volume  (/workspace, auto-removed on kill)
+```
+
+**Why nginx in front?**
+nginx handles WebSocket upgrades, long-lived proxy timeouts, static asset serving, and acts as the single public entrypoint. The Node.js server is never directly exposed to the host — only reachable on the internal `sandbox-net` Docker bridge network.
+
+**Why NOT give sandbox containers their own IP?**
+All sandbox containers run with `NetworkMode: none`. This means no network interface at all — no IP, no routes, no way to reach the host, other containers, or the internet. Assigning an IP would break isolation: the container could reach the `sandbox-net` bridge, potentially the Docker host, and other running sessions. The current approach is the safest possible configuration for a public-facing sandbox.
+
+---
+
+## Configuration
+
+Edit `server/.env` or override in `docker-compose.yml`:
 
 | Variable | Default | Description |
 |---|---|---|
-| `PORT` | `3000` | HTTP/WebSocket server port |
+| `PORT` | `3000` | Internal Node.js server port |
 | `MAX_SESSIONS` | `20` | Max concurrent sandbox sessions |
-| `SESSION_TIMEOUT_MS` | `600000` | Session lifetime (10 min) |
-| `MEMORY_LIMIT` | `128m` | Memory per container |
-| `CPU_QUOTA` | `50000` | CPU quota (50% of 1 core) |
+| `MEMORY_LIMIT` | `128m` | RAM per container |
+| `CPU_QUOTA` | `50000` | CPU quota (50000 = 50% of one core) |
+
+Sessions run until the user clicks **Kill Session** or closes the browser. There is no automatic timeout.
 
 ---
 
-## 🔒 Security
+## Security Model
 
-Each container is locked down:
+Each sandbox container is locked down at creation time:
 
-| Restriction | Value |
+| Control | Value |
 |---|---|
-| Network | **Disabled** (`NetworkMode: none`) |
-| Memory | 128MB + 256MB swap |
-| CPU | 50% of 1 core |
-| Capabilities | ALL dropped, only `CHOWN SETUID SETGID DAC_OVERRIDE` added back |
-| PID limit | 50 processes max |
-| File limits | 1024 open files max |
+| Network | **None** — no interface, no IP, fully air-gapped |
+| Memory | 128 MB RAM + 256 MB swap |
+| CPU | 50% of 1 core (`CpuQuota: 50000`) |
+| Capabilities | ALL dropped; only `CHOWN SETUID SETGID DAC_OVERRIDE` added back |
+| PID limit | 100 processes |
+| File descriptors | 1024 max open files |
 | New privileges | Blocked (`no-new-privileges:true`) |
-| Auto-remove | Container deleted on exit |
-| Session timeout | 10 minutes |
+| Container cleanup | Force-removed on kill (not just stopped) |
+| Volume cleanup | Named volume deleted alongside container |
 
-### ⚠️ Production Hardening
-
-For public deployment, also consider:
-
-1. **Run behind nginx** with rate limiting:
-```nginx
-limit_req_zone $binary_remote_addr zone=sandbox:10m rate=2r/m;
-location /api/launch { limit_req zone=sandbox burst=3; }
-```
-
-2. **Use rootless Docker** to prevent privilege escalation
-
-3. **Add authentication** — protect `/api/sessions` admin endpoint
-
-4. **Use a dedicated Docker network** with no internet egress
-
-5. **Set up container image allow-list** — only pull pre-approved images
-
-6. **Monitor disk usage** — containers write to overlay fs
+The Node.js server runs inside its own container and communicates with Docker via the Unix socket (`/var/run/docker.sock`). Sandbox containers are **sibling containers** of the app — they are not nested inside it.
 
 ---
 
-## 📁 Project Structure
+## Image Manager
+
+The **Image Manager** tab in the UI lets you:
+
+- View all pulled Docker images with size and age
+- Remove individual images
+- Remove all unused images in one click (skips images used by active sessions)
+
+When you remove an image, the server first removes any stopped containers that reference it, then removes the image. This avoids the common Docker error `image is being used by a stopped container`.
+
+---
+
+## Distro Compatibility
+
+| Family | Native Docker Image | Distributions |
+|---|---|---|
+| Debian-based | ✅ Yes | Ubuntu, Debian, Kali, Parrot |
+| Arch-based | ✅ Yes | Arch, Manjaro, Artix, BlackArch |
+| RPM-based | ✅ Yes | Fedora, Rocky, AlmaLinux, RHEL UBI, CentOS Stream, openSUSE |
+| Independent | ✅ Yes | Alpine, Gentoo, Void, NixOS, Clear Linux, Slackware |
+| Desktop flavors | ⚠️ Fallback | Lubuntu, Kubuntu, Xubuntu, Mint, Pop!_OS → Ubuntu base |
+| Hardware-specific | ⚠️ Fallback | Raspberry Pi OS → Debian base (requires ARM hardware) |
+| BSD | ❌ Cannot run | FreeBSD, OpenBSD, NetBSD, GhostBSD, DragonFly → Ubuntu base |
+| Non-Linux | ❌ Cannot run | Haiku, Tails, Whonix → Ubuntu/Debian base |
+
+Fallback distros are marked with an **"emulated"** badge in the UI and show an explanation banner when launched.
+
+**Why can't BSD run?** Docker containers share the host's Linux kernel. BSD operating systems (FreeBSD, OpenBSD, NetBSD) require their own kernel. There is no workaround — a BSD container would need a full VM, not a Docker container.
+
+---
+
+## Project Structure
 
 ```
 linuxsandbox/
-├── server/
-│   ├── index.js          # Main server (Express + WebSocket + Dockerode)
-│   ├── package.json
-│   └── .env              # Configuration
 ├── client/
 │   └── public/
-│       └── index.html    # Frontend (xterm.js + UI)
-├── Dockerfile
-├── docker-compose.yml
+│       └── index.html       # Full frontend — xterm.js, UI, WebSocket client
+├── server/
+│   ├── index.js             # Express + WebSocket server + Dockerode
+│   ├── package.json
+│   └── .env                 # Runtime configuration
+├── Dockerfile               # Builds the Node.js app image (no npm needed on host)
+├── docker-compose.yml       # nginx + app + internal network
+├── nginx.conf               # Reverse proxy with WebSocket upgrade
 └── README.md
 ```
 
 ---
 
-## 🔌 WebSocket Protocol
+## WebSocket Protocol
 
-The client and server communicate via JSON messages over WebSocket:
-
-### Client → Server
-
-| Type | Payload | Description |
+| Direction | Type | Payload |
 |---|---|---|
-| `launch` | `{ distro, version }` | Start a new container session |
-| `input` | `{ data, sessionId }` | Send keystrokes to container |
-| `resize` | `{ rows, cols, sessionId }` | Terminal resize event |
-| `kill` | `{ sessionId }` | Kill session |
-
-### Server → Client
-
-| Type | Payload | Description |
-|---|---|---|
-| `status` | `{ message }` | Boot status update |
-| `pull_progress` | `{ message }` | Docker pull progress |
-| `ready` | `{ sessionId, image, shell }` | Container is ready |
-| `output` | `{ data }` | Terminal output bytes |
-| `timeout` | `{ message }` | Session expired |
-| `exit` | `{ message }` | Container exited |
-| `error` | `{ message }` | Error occurred |
+| Client → Server | `launch` | `{ distro, version }` |
+| Client → Server | `input` | `{ data, sessionId }` |
+| Client → Server | `resize` | `{ rows, cols, sessionId }` |
+| Client → Server | `kill` | `{ sessionId }` |
+| Server → Client | `launch_info` | `{ image, fallback, fallbackFor, note }` |
+| Server → Client | `pull_status` | `{ message }` |
+| Server → Client | `pull_progress` | `{ pct, layers, phase, currentBytes, totalBytes }` |
+| Server → Client | `status` | `{ message, phase }` |
+| Server → Client | `ready` | `{ sessionId, image, shell }` |
+| Server → Client | `output` | `{ data }` — binary string |
+| Server → Client | `exit` | `{ message }` |
+| Server → Client | `error` | `{ message }` |
+| Server → Client | `killed` | — |
 
 ---
 
-## 🌐 Supported Distros
+## Production Deployment
 
-| Family | Distributions |
-|---|---|
-| Debian-based | Ubuntu, Debian, Linux Mint, Pop!_OS, Kali, Parrot, elementary, Zorin, Lubuntu, Kubuntu, Xubuntu, Raspberry Pi OS, MX Linux, Deepin |
-| Arch-based | Arch Linux, Manjaro, EndeavourOS, Garuda, BlackArch, Artix |
-| RPM-based | Fedora, RHEL (UBI), CentOS Stream, Rocky Linux, AlmaLinux, openSUSE Leap, openSUSE Tumbleweed, Mageia, Oracle Linux |
-| Independent | Gentoo, Slackware, Void Linux, NixOS, Alpine, Tiny Core, Puppy, Haiku, Clear Linux, Solus, GNU Guix, Tails, Whonix |
-| BSD | FreeBSD, OpenBSD, NetBSD, GhostBSD, DragonFly BSD, TrueNAS CORE |
+### HTTPS / SSL
 
-> **Note:** Some distros (like Haiku, TrueNAS, BSDs) run as Ubuntu/Debian containers since they don't have official Docker images. The terminal experience still teaches package managers and system concepts.
+Replace nginx with **Caddy** for automatic Let's Encrypt:
+
+```
+linuxsandbox.example.com {
+    reverse_proxy linuxsandbox:3000
+}
+```
+
+Or keep nginx and provision certs with Certbot:
+
+```bash
+certbot certonly --standalone -d yourdomain.com
+```
+
+Then mount `/etc/letsencrypt` into the nginx container and add `ssl_certificate` directives.
+
+### Firewall
+
+Only ports 80 and 443 need to be public. Port 3000 is internal only.
+
+```bash
+ufw allow 80/tcp
+ufw allow 443/tcp
+ufw allow 22/tcp
+ufw enable
+```
+
+### Recommended VPS
+
+Any VPS with Docker socket access works: DigitalOcean, Hetzner, Linode, Vultr. Avoid serverless platforms (no persistent Docker daemon).
+
+Minimum specs: 2 vCPU, 2 GB RAM, 20 GB disk (images can be large).
 
 ---
 
-## 🛠️ Adding More Distros
-
-1. Add entry to `DISTROS` array in `client/public/index.html`
-2. Add image resolver to `DISTRO_IMAGES` in `server/index.js`
-3. Done!
-
----
-
-## 📄 License
+## License
 
 MIT

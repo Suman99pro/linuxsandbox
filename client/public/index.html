@@ -286,9 +286,7 @@ nav { background:var(--bg); border-bottom:1px solid var(--border); padding:0 24p
 .mfl .dicon { font-size:18px; }
 .mfl .dname { font-size:13px; font-weight:600; }
 .mfl .dver  { font-size:11px; color:var(--text3); font-family:var(--mono); }
-#timer { display:none; align-items:center; gap:7px; font-size:11px; color:var(--text3); font-family:var(--mono); }
-#tbar  { width:60px; height:4px; background:var(--border); border-radius:100px; overflow:hidden; }
-#tfill { height:100%; background:var(--green); width:100%; border-radius:100px; transition:width 1s linear, background .3s; }
+
 .mfr { display:flex; gap:6px; }
 
 /* confirm */
@@ -471,10 +469,7 @@ nav { background:var(--bg); border-bottom:1px solid var(--border); padding:0 24p
         <span class="dicon" id="micon"></span>
         <div><div class="dname" id="mdn">--</div><div class="dver" id="mdv">--</div></div>
       </div>
-      <div id="timer">
-        <span id="tt">10:00</span>
-        <div id="tbar"><div id="tfill"></div></div>
-      </div>
+
       <div class="mfr">
         <button class="sm-btn danger" onclick="closeModal()">Kill Session</button>
         <button class="sm-btn" onclick="if(term)term.focus()">Focus</button>
@@ -550,8 +545,7 @@ const DISTROS = [
 const sv = {};
 DISTROS.forEach(d => sv[d.id] = d.vers[0]);
 let filter = 'all';
-let ws, term, fit, cur, tiv;
-const TSEC = 600;
+let ws, term, fit, cur;
 
 // ── VIEW ──
 function showView(name, btn) {
@@ -662,7 +656,6 @@ function handle(m) {
     blog('Volume /workspace mounted', 'dim');
     if (m.note) blog('⚠ ' + m.note, 'warn');
     setTimeout(openTerm, 500);
-    startTimer();
   }
 
   else if (m.type === 'output') {
@@ -728,19 +721,6 @@ function openTerm() {
   }
 }
 
-function startTimer() {
-  clearInterval(tiv);
-  document.getElementById('timer').style.display='flex';
-  const t0=Date.now();
-  tiv=setInterval(()=>{
-    const r=TSEC-Math.floor((Date.now()-t0)/1000);
-    if(r<=0){clearInterval(tiv);return;}
-    const m=Math.floor(r/60),s=r%60;
-    document.getElementById('tt').textContent=m+':'+(s<10?'0':'')+s;
-    document.getElementById('tfill').style.width=(r/TSEC*100)+'%';
-    document.getElementById('tfill').style.background=r<60?'#dc2626':r<180?'#d97706':'var(--green)';
-  },1000);
-}
 
 function setStat(s) {
   document.getElementById('sdot').className='sdot'+(s==='on'?' on':s==='off'?' off':'');
@@ -767,8 +747,6 @@ function launch(e, id) {
   document.getElementById('micon').textContent=dist.icon;
   document.getElementById('mdn').textContent=dist.name;
   document.getElementById('mdv').textContent=ver+' · '+dist.fam;
-  document.getElementById('timer').style.display='none';
-  document.getElementById('tfill').style.background='var(--green)';
   document.getElementById('pull-icon').textContent=dist.icon;
   document.getElementById('pull-title').textContent='Pulling '+dist.name+'…';
 
@@ -785,7 +763,6 @@ function launch(e, id) {
 function restart() {
   if(!cur) return;
   if(term){term.dispose();term=null;fit=null;}
-  clearInterval(tiv);
   resetProgress();
   document.getElementById('pull-section').classList.remove('hidden');
   document.getElementById('tw').classList.remove('show');
@@ -796,7 +773,6 @@ function restart() {
 function closeModal() {
   if(ws?.readyState===1&&cur?.sid) ws.send(JSON.stringify({type:'kill',sessionId:cur.sid}));
   document.getElementById('ov').classList.remove('show');
-  clearInterval(tiv);
   setTimeout(()=>{
     if(term){term.dispose();term=null;fit=null;}
     document.getElementById('pull-section').classList.remove('hidden');
