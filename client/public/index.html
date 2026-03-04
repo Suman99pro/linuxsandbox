@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LinuxSandbox</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/xterm@5.3.0/css/xterm.css">
+<script src="https://unpkg.com/xterm@5.3.0/lib/xterm.js"></script>
+<script src="https://unpkg.com/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+<style>
+:root {
+  --sans: 'DM Sans', sans-serif;
+  --mono: 'DM Mono', monospace;
+  --bg: #ffffff; --bg2: #f7f7f5; --bg3: #f0f0ed;
+  --border: #e5e5e2; --border2: #d0d0cc;
+  --text: #111110; --text2: #6b6b68; --text3: #a8a8a4;
+  --green: #16a34a; --green-bg: #f0fdf4; --green-border: #bbf7d0;
+  --blue: #2563eb; --blue-bg: #eff6ff;
+  --amber: #d97706; --amber-bg: #fffbeb;
+  --red: #dc2626; --red-bg: #fef2f2;
+  --orange: #ea580c; --orange-bg: #fff7ed;
+  --radius: 8px;
+  --shadow: 0 1px 3px rgba(0,0,0,.08);
+  --shadow2: 0 4px 16px rgba(0,0,0,.08), 0 2px 4px rgba(0,0,0,.04);
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family:var(--sans); background:var(--bg); color:var(--text); min-height:100vh; font-size:14px; line-height:1.5; -webkit-font-smoothing:antialiased; }
+
+/* NAV */
+nav { background:var(--bg); border-bottom:1px solid var(--border); padding:0 24px; display:flex; align-items:center; justify-content:space-between; height:56px; position:sticky; top:0; z-index:100; }
+.nav-logo { display:flex; align-items:center; gap:10px; text-decoration:none; cursor:pointer; }
+.logo-icon { width:32px; height:32px; background:var(--text); border-radius:7px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.logo-icon svg { width:18px; height:18px; }
+.logo-text { font-size:15px; font-weight:600; color:var(--text); letter-spacing:-.3px; }
+.logo-text span { color:var(--green); }
+.nav-tabs { display:flex; gap:2px; }
+.nav-tab { padding:6px 14px; border-radius:6px; font-size:13px; font-weight:500; color:var(--text2); cursor:pointer; border:none; background:transparent; font-family:var(--sans); transition:all .15s; }
+.nav-tab:hover { background:var(--bg2); color:var(--text); }
+.nav-tab.active { background:var(--bg3); color:var(--text); }
+.status-pill { display:flex; align-items:center; gap:6px; padding:4px 10px; border-radius:100px; border:1px solid var(--border); font-size:12px; font-family:var(--mono); color:var(--text2); background:var(--bg2); }
+.sdot { width:6px; height:6px; border-radius:50%; background:var(--border2); flex-shrink:0; }
+.sdot.on  { background:var(--green); box-shadow:0 0 0 2px rgba(22,163,74,.2); }
+.sdot.off { background:var(--red); }
+
+/* VIEWS */
+.view { display:none; } .view.active { display:block; }
+
+/* HERO */
+.hero { background:var(--bg2); border-bottom:1px solid var(--border); padding:28px 24px 20px; }
+.hero-inner { max-width:1100px; margin:0 auto; }
+.hero h1 { font-size:24px; font-weight:600; letter-spacing:-.4px; margin-bottom:5px; }
+.hero p { color:var(--text2); font-size:13px; margin-bottom:16px; font-weight:300; }
+.hero-stats { display:flex; gap:12px; flex-wrap:wrap; }
+.stat-chip { display:flex; align-items:center; gap:6px; padding:4px 11px; background:var(--bg); border:1px solid var(--border); border-radius:100px; font-size:12px; color:var(--text2); font-weight:500; }
+.stat-dot { width:5px; height:5px; border-radius:50%; background:var(--green); }
+
+/* TOOLBAR */
+.toolbar { max-width:1100px; margin:0 auto; padding:14px 24px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.search-box { position:relative; flex:1; min-width:200px; max-width:320px; }
+.search-box svg { position:absolute; left:10px; top:50%; transform:translateY(-50%); color:var(--text3); width:14px; height:14px; pointer-events:none; }
+.search-box input { width:100%; background:var(--bg); border:1px solid var(--border); border-radius:var(--radius); padding:7px 10px 7px 30px; font-family:var(--sans); font-size:13px; color:var(--text); outline:none; transition:border-color .15s, box-shadow .15s; }
+.search-box input:focus { border-color:var(--text); box-shadow:0 0 0 3px rgba(17,17,16,.06); }
+.search-box input::placeholder { color:var(--text3); }
+.filters { display:flex; gap:4px; flex-wrap:wrap; }
+.fchip { padding:5px 12px; border-radius:100px; border:1px solid var(--border); background:var(--bg); color:var(--text2); font-family:var(--sans); font-size:12px; font-weight:500; cursor:pointer; transition:all .15s; }
+.fchip:hover { border-color:var(--border2); color:var(--text); }
+.fchip.on { background:var(--text); border-color:var(--text); color:#fff; }
+
+/* GRID */
+.grid-wrap { max-width:1100px; margin:0 auto; padding:0 24px 60px; }
+.grid-info { font-size:12px; color:var(--text3); margin-bottom:12px; }
+.grid-info b { color:var(--text2); font-weight:500; }
+.grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(258px,1fr)); gap:10px; }
+
+/* CARD */
+.card { background:var(--bg); border:1px solid var(--border); border-radius:10px; padding:16px; transition:border-color .15s, box-shadow .15s; animation:fadeUp .2s ease both; }
+@keyframes fadeUp { from{opacity:0;transform:translateY(5px)} to{opacity:1;transform:translateY(0)} }
+.card:hover { border-color:var(--border2); box-shadow:var(--shadow2); }
+.card-head { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:10px; }
+.card-logo { width:36px; height:36px; border-radius:8px; background:var(--bg2); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-size:17px; flex-shrink:0; }
+.badge { font-size:10px; font-weight:600; padding:2px 7px; border-radius:100px; letter-spacing:.3px; text-transform:uppercase; }
+.b-stable  { background:var(--green-bg); color:var(--green); border:1px solid var(--green-border); }
+.b-rolling { background:var(--amber-bg); color:var(--amber); border:1px solid #fde68a; }
+.b-lts     { background:var(--blue-bg);  color:var(--blue);  border:1px solid #bfdbfe; }
+.b-beta    { background:var(--red-bg);   color:var(--red);   border:1px solid #fecaca; }
+.card-name { font-size:14px; font-weight:600; color:var(--text); margin-bottom:2px; }
+.card-fam  { font-size:11px; color:var(--text3); text-transform:uppercase; letter-spacing:.4px; font-weight:500; margin-bottom:6px; display:flex; align-items:center; gap:5px; }
+.fallback-tag { font-size:9px; background:var(--orange-bg); color:var(--orange); border:1px solid #fed7aa; border-radius:100px; padding:1px 6px; font-weight:600; text-transform:uppercase; letter-spacing:.3px; }
+.card-desc { font-size:12px; color:var(--text2); line-height:1.55; margin-bottom:11px; font-weight:300; }
+.ver-row { display:flex; align-items:center; gap:4px; margin-bottom:11px; flex-wrap:wrap; }
+.ver-lbl { font-size:10px; color:var(--text3); font-weight:500; text-transform:uppercase; letter-spacing:.4px; margin-right:2px; }
+.vchip { font-family:var(--mono); font-size:10px; padding:2px 8px; border-radius:5px; border:1px solid var(--border); color:var(--text2); background:var(--bg2); cursor:pointer; transition:all .12s; }
+.vchip:hover, .vchip.on { border-color:var(--text); color:var(--text); background:var(--bg3); }
+.launch-btn { width:100%; background:var(--text); color:#fff; border:none; border-radius:7px; padding:8px 14px; font-family:var(--sans); font-size:13px; font-weight:500; cursor:pointer; transition:all .15s; display:flex; align-items:center; justify-content:center; gap:6px; }
+.launch-btn:hover { background:#000; box-shadow:0 2px 8px rgba(0,0,0,.2); transform:translateY(-1px); }
+.launch-btn svg { width:13px; height:13px; }
+
+/* IMAGE MANAGER */
+.page-inner { max-width:860px; margin:0 auto; padding:28px 24px 60px; }
+.page-header { display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:22px; gap:16px; }
+.page-header h2 { font-size:20px; font-weight:600; letter-spacing:-.3px; margin-bottom:4px; }
+.page-header p { font-size:13px; color:var(--text2); font-weight:300; }
+.btn { display:inline-flex; align-items:center; gap:6px; padding:8px 16px; border-radius:7px; font-family:var(--sans); font-size:13px; font-weight:500; cursor:pointer; border:none; transition:all .15s; white-space:nowrap; }
+.btn-default { background:var(--bg); border:1px solid var(--border); color:var(--text); }
+.btn-default:hover { background:var(--bg2); border-color:var(--border2); }
+.btn-danger { background:var(--red-bg); border:1px solid #fecaca; color:var(--red); }
+.btn-danger:hover { background:#fee2e2; }
+.btn svg { width:14px; height:14px; }
+.storage-card { background:var(--bg2); border:1px solid var(--border); border-radius:10px; padding:16px 20px; margin-bottom:18px; display:flex; align-items:center; gap:20px; flex-wrap:wrap; }
+.storage-stat .val { font-size:22px; font-weight:600; color:var(--text); font-family:var(--mono); }
+.storage-stat .lbl { font-size:11px; color:var(--text3); text-transform:uppercase; letter-spacing:.4px; font-weight:500; }
+.storage-bar-wrap { flex:1; min-width:200px; }
+.storage-bar-lbl { font-size:11px; color:var(--text2); margin-bottom:6px; }
+.storage-bar { height:8px; background:var(--bg3); border-radius:100px; overflow:hidden; }
+.storage-bar-fill { height:100%; background:var(--text); border-radius:100px; transition:width .4s; }
+.img-table { border:1px solid var(--border); border-radius:10px; overflow:hidden; }
+.img-table-head { display:grid; grid-template-columns:2fr 1fr 1fr 1fr auto; background:var(--bg2); border-bottom:1px solid var(--border); padding:9px 16px; font-size:11px; font-weight:600; color:var(--text3); text-transform:uppercase; letter-spacing:.5px; }
+.img-row { display:grid; grid-template-columns:2fr 1fr 1fr 1fr auto; padding:11px 16px; border-bottom:1px solid var(--border); align-items:center; transition:background .1s; }
+.img-row:last-child { border-bottom:none; }
+.img-row:hover { background:var(--bg2); }
+.img-tag { font-family:var(--mono); font-size:12px; color:var(--text); font-weight:500; }
+.img-id  { font-family:var(--mono); font-size:11px; color:var(--text3); }
+.img-size{ font-family:var(--mono); font-size:12px; color:var(--text2); }
+.img-date{ font-size:12px; color:var(--text3); }
+.in-use-badge { font-size:10px; font-weight:600; padding:2px 7px; border-radius:100px; background:var(--green-bg); color:var(--green); border:1px solid var(--green-border); }
+.img-empty { padding:44px; text-align:center; color:var(--text3); }
+.img-empty p { font-size:13px; }
+
+/* ── TERMINAL MODAL ── */
+#ov { position:fixed; inset:0; background:rgba(0,0,0,.5); backdrop-filter:blur(4px); z-index:999; display:none; align-items:center; justify-content:center; padding:20px; }
+#ov.show { display:flex; }
+#modal { width:100%; max-width:960px; height:600px; background:#fff; border-radius:14px; border:1px solid var(--border); box-shadow:0 24px 64px rgba(0,0,0,.2); display:flex; flex-direction:column; overflow:hidden; transform:scale(.97) translateY(8px); transition:transform .2s cubic-bezier(.34,1.4,.64,1); }
+#ov.show #modal { transform:scale(1) translateY(0); }
+
+/* titlebar */
+#mtb { background:var(--bg2); border-bottom:1px solid var(--border); padding:10px 14px; display:flex; align-items:center; gap:12px; flex-shrink:0; }
+.win-dots { display:flex; gap:6px; }
+.wd { width:12px; height:12px; border-radius:50%; cursor:pointer; transition:filter .1s; }
+.wd:hover { filter:brightness(.85); }
+.wd-r { background:#ff5f57; } .wd-y { background:#febc2e; } .wd-g { background:#28c840; }
+#mtitle { font-size:12px; font-weight:500; color:var(--text2); flex:1; text-align:center; font-family:var(--mono); }
+.mtb-btns { display:flex; gap:5px; }
+.sm-btn { padding:4px 11px; border-radius:6px; font-family:var(--sans); font-size:11px; font-weight:500; cursor:pointer; border:1px solid var(--border); background:var(--bg); color:var(--text2); transition:all .12s; }
+.sm-btn:hover { border-color:var(--border2); color:var(--text); }
+.sm-btn.danger { color:var(--red); border-color:#fecaca; background:var(--red-bg); }
+.sm-btn.danger:hover { background:#fee2e2; }
+
+/* ── PROGRESS SECTION ── */
+#pull-section {
+  flex:1;
+  background:#0d0d0d;
+  display:flex;
+  flex-direction:column;
+  padding:20px 24px;
+  overflow:hidden;
+  min-height:0;
+}
+#pull-section.hidden { display:none; }
+
+.pull-header {
+  display:flex;
+  align-items:center;
+  gap:12px;
+  margin-bottom:20px;
+}
+
+.pull-icon-wrap {
+  width:40px; height:40px;
+  border-radius:10px;
+  background:rgba(255,255,255,.06);
+  display:flex; align-items:center; justify-content:center;
+  font-size:20px;
+  flex-shrink:0;
+}
+
+.pull-titles { flex:1; }
+.pull-title { font-size:14px; font-weight:600; color:#eee; margin-bottom:2px; }
+.pull-sub   { font-size:11px; color:#555; font-family:var(--mono); }
+
+/* Fallback warning banner */
+.fallback-banner {
+  background:rgba(234,88,12,.1);
+  border:1px solid rgba(234,88,12,.25);
+  border-radius:8px;
+  padding:10px 14px;
+  margin-bottom:18px;
+  display:none;
+}
+.fallback-banner.show { display:flex; gap:10px; align-items:flex-start; }
+.fallback-banner .fb-icon { font-size:16px; flex-shrink:0; margin-top:1px; }
+.fallback-banner .fb-text { font-size:12px; color:#f97316; line-height:1.55; }
+.fallback-banner .fb-title { font-weight:600; margin-bottom:2px; }
+
+/* Main progress bar */
+.progress-wrap {
+  margin-bottom:18px;
+}
+.progress-labels {
+  display:flex;
+  justify-content:space-between;
+  margin-bottom:7px;
+  font-size:11px;
+}
+.progress-label-left  { color:#888; font-family:var(--mono); }
+.progress-label-right { color:#555; font-family:var(--mono); }
+
+.progress-track {
+  height:6px;
+  background:#1e1e1e;
+  border-radius:100px;
+  overflow:hidden;
+  position:relative;
+}
+
+.progress-fill {
+  height:100%;
+  border-radius:100px;
+  transition:width .3s ease, background .3s;
+  position:relative;
+  overflow:hidden;
+}
+
+/* animated shimmer on active bar */
+.progress-fill.active::after {
+  content:'';
+  position:absolute;
+  inset:0;
+  background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.2) 50%,transparent 100%);
+  animation:shimmer 1.2s infinite;
+}
+@keyframes shimmer { from{transform:translateX(-100%)} to{transform:translateX(100%)} }
+
+.progress-fill.pull    { background:#3b82f6; }
+.progress-fill.extract { background:#a855f7; }
+.progress-fill.done    { background:var(--green); }
+
+/* Layer stats */
+.layer-stats {
+  display:flex;
+  gap:14px;
+  margin-bottom:20px;
+  flex-wrap:wrap;
+}
+
+.layer-stat {
+  display:flex;
+  align-items:center;
+  gap:6px;
+  font-size:11px;
+  color:#555;
+  font-family:var(--mono);
+}
+
+.layer-dot {
+  width:8px; height:8px; border-radius:50%; flex-shrink:0;
+}
+.ld-pull    { background:#3b82f6; }
+.ld-extract { background:#a855f7; }
+.ld-done    { background:#22c55e; }
+.ld-wait    { background:#333; }
+
+/* Boot log */
+#bootlog {
+  flex:1;
+  overflow-y:auto;
+  font-family:var(--mono);
+  font-size:11px;
+  line-height:1.7;
+  min-height:0;
+}
+#bootlog .ok   { color:#4ade80; }
+#bootlog .dim  { color:#444; }
+#bootlog .warn { color:#fbbf24; }
+#bootlog .err  { color:#f87171; }
+#bootlog .info { color:#60a5fa; }
+
+/* xterm */
+#tw { flex:1; background:#0d0d0d; display:none; overflow:hidden; min-height:0; }
+#tw.show { display:block; }
+
+/* modal footer */
+#mft { background:var(--bg2); border-top:1px solid var(--border); padding:8px 16px; display:flex; align-items:center; justify-content:space-between; flex-shrink:0; }
+.mfl { display:flex; align-items:center; gap:10px; }
+.mfl .dicon { font-size:18px; }
+.mfl .dname { font-size:13px; font-weight:600; }
+.mfl .dver  { font-size:11px; color:var(--text3); font-family:var(--mono); }
+#timer { display:none; align-items:center; gap:7px; font-size:11px; color:var(--text3); font-family:var(--mono); }
+#tbar  { width:60px; height:4px; background:var(--border); border-radius:100px; overflow:hidden; }
+#tfill { height:100%; background:var(--green); width:100%; border-radius:100px; transition:width 1s linear, background .3s; }
+.mfr { display:flex; gap:6px; }
+
+/* confirm */
+.confirm-overlay { position:fixed; inset:0; background:rgba(0,0,0,.4); backdrop-filter:blur(3px); z-index:1100; display:none; align-items:center; justify-content:center; }
+.confirm-overlay.show { display:flex; }
+.confirm-box { background:#fff; border:1px solid var(--border); border-radius:12px; padding:24px; width:380px; box-shadow:var(--shadow2); }
+.confirm-box h3 { font-size:15px; font-weight:600; margin-bottom:8px; }
+.confirm-box p  { font-size:13px; color:var(--text2); margin-bottom:20px; line-height:1.5; }
+.confirm-btns { display:flex; gap:8px; justify-content:flex-end; }
+
+/* toast */
+#toast { position:fixed; bottom:20px; right:20px; background:var(--text); color:#fff; font-size:13px; padding:10px 16px; border-radius:8px; box-shadow:var(--shadow2); z-index:2000; opacity:0; transform:translateY(6px); transition:all .2s; pointer-events:none; max-width:320px; }
+#toast.show { opacity:1; transform:translateY(0); }
+#toast.ok { background:var(--green); } #toast.err { background:var(--red); }
+
+::-webkit-scrollbar { width:4px; height:4px; }
+::-webkit-scrollbar-track { background:transparent; }
+::-webkit-scrollbar-thumb { background:var(--border2); border-radius:2px; }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-logo" onclick="showView('distros')">
+    <div class="logo-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round">
+        <rect x="3" y="3" width="18" height="18" rx="3"/>
+        <path d="M7 8l3 2-3 2M13 14h4"/>
+      </svg>
+    </div>
+    <span class="logo-text">Linux<span>Sandbox</span></span>
+  </div>
+  <div class="nav-tabs">
+    <button class="nav-tab active" id="tab-distros" onclick="showView('distros',this)">Distributions</button>
+    <button class="nav-tab" id="tab-images" onclick="showView('images',this)">Image Manager</button>
+  </div>
+  <div class="status-pill">
+    <span class="sdot" id="sdot"></span>
+    <span id="stxt">connecting</span>
+    &nbsp;·&nbsp;<span id="scnt">--</span>
+  </div>
+</nav>
+
+<!-- DISTROS -->
+<div id="view-distros" class="view active">
+  <div class="hero">
+    <div class="hero-inner">
+      <h1>Linux Distribution Sandbox</h1>
+      <p>Launch any Linux distro in an isolated Docker container. Real shell, real commands — no VM, no setup required.</p>
+      <div class="hero-stats">
+        <div class="stat-chip"><span class="stat-dot"></span><b id="h-count">50</b> distributions</div>
+        <div class="stat-chip"><span class="stat-dot"></span>Real Docker containers</div>
+        <div class="stat-chip"><span class="stat-dot"></span>10-min sandboxed sessions</div>
+        <div class="stat-chip"><span class="stat-dot"></span>/workspace volume per session</div>
+      </div>
+    </div>
+  </div>
+  <div class="toolbar">
+    <div class="search-box">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+      <input id="q" type="text" placeholder="Search distributions..." autocomplete="off">
+    </div>
+    <div class="filters">
+      <button class="fchip on" data-f="all">All</button>
+      <button class="fchip" data-f="debian">Debian</button>
+      <button class="fchip" data-f="arch">Arch</button>
+      <button class="fchip" data-f="rpm">RPM</button>
+      <button class="fchip" data-f="independent">Independent</button>
+      <button class="fchip" data-f="bsd">BSD</button>
+      <button class="fchip" data-f="lts">LTS</button>
+      <button class="fchip" data-f="rolling">Rolling</button>
+    </div>
+  </div>
+  <div class="grid-wrap">
+    <div class="grid-info">Showing <b id="cnt">0</b> distributions</div>
+    <div class="grid" id="grid"></div>
+    <div id="empty" style="display:none;padding:48px;text-align:center;color:var(--text3);font-size:14px;">No distributions found.</div>
+  </div>
+</div>
+
+<!-- IMAGE MANAGER -->
+<div id="view-images" class="view">
+  <div class="page-inner">
+    <div class="page-header">
+      <div>
+        <h2>Docker Image Manager</h2>
+        <p>View and remove Docker images pulled by LinuxSandbox to free disk space.</p>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-default" onclick="loadImages()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/></svg>
+          Refresh
+        </button>
+        <button class="btn btn-danger" onclick="confirmPruneAll()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+          Remove All Unused
+        </button>
+      </div>
+    </div>
+    <div class="storage-card">
+      <div class="storage-stat"><div class="val" id="img-total-size">--</div><div class="lbl">Total Size</div></div>
+      <div class="storage-stat"><div class="val" id="img-count">--</div><div class="lbl">Images</div></div>
+      <div class="storage-stat"><div class="val" id="img-in-use">--</div><div class="lbl">In Use</div></div>
+      <div class="storage-bar-wrap">
+        <div class="storage-bar-lbl">Active vs idle images</div>
+        <div class="storage-bar"><div class="storage-bar-fill" id="storageFill" style="width:0%"></div></div>
+        <div style="font-size:11px;color:var(--text3);margin-top:4px">Active session images</div>
+      </div>
+    </div>
+    <div class="img-table">
+      <div class="img-table-head"><span>Image</span><span>ID</span><span>Size</span><span>Created</span><span>Action</span></div>
+      <div id="imgRows"><div class="img-empty"><p>Loading images...</p></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- TERMINAL MODAL -->
+<div id="ov">
+  <div id="modal">
+    <div id="mtb">
+      <div class="win-dots">
+        <div class="wd wd-r" onclick="closeModal()" title="Close"></div>
+        <div class="wd wd-y"></div>
+        <div class="wd wd-g"></div>
+      </div>
+      <span id="mtitle">terminal</span>
+      <div class="mtb-btns">
+        <button class="sm-btn" onclick="restart()">Restart</button>
+        <button class="sm-btn danger" onclick="closeModal()">Kill [Esc]</button>
+      </div>
+    </div>
+
+    <!-- PULL PROGRESS SECTION -->
+    <div id="pull-section">
+      <div class="pull-header">
+        <div class="pull-icon-wrap" id="pull-icon">📦</div>
+        <div class="pull-titles">
+          <div class="pull-title" id="pull-title">Preparing...</div>
+          <div class="pull-sub"  id="pull-sub">Initializing</div>
+        </div>
+      </div>
+
+      <!-- Fallback warning -->
+      <div class="fallback-banner" id="fallbackBanner">
+        <div class="fb-icon">⚠️</div>
+        <div class="fb-text">
+          <div class="fb-title" id="fbTitle">Running on a substitute image</div>
+          <div id="fbNote"></div>
+        </div>
+      </div>
+
+      <!-- Main progress bar -->
+      <div class="progress-wrap">
+        <div class="progress-labels">
+          <span class="progress-label-left" id="prog-label">Waiting...</span>
+          <span class="progress-label-right" id="prog-pct">--</span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-fill pull active" id="prog-fill" style="width:3%"></div>
+        </div>
+      </div>
+
+      <!-- Layer breakdown -->
+      <div class="layer-stats" id="layer-stats" style="display:none">
+        <div class="layer-stat"><div class="layer-dot ld-pull"></div><span id="ls-pull">0 downloading</span></div>
+        <div class="layer-stat"><div class="layer-dot ld-extract"></div><span id="ls-extract">0 extracting</span></div>
+        <div class="layer-stat"><div class="layer-dot ld-done"></div><span id="ls-done">0 complete</span></div>
+        <div class="layer-stat"><div class="layer-dot ld-wait"></div><span id="ls-total">0 layers</span></div>
+      </div>
+
+      <!-- Log -->
+      <div id="bootlog"></div>
+    </div>
+
+    <!-- TERMINAL -->
+    <div id="tw"></div>
+
+    <div id="mft">
+      <div class="mfl">
+        <span class="dicon" id="micon"></span>
+        <div><div class="dname" id="mdn">--</div><div class="dver" id="mdv">--</div></div>
+      </div>
+      <div id="timer">
+        <span id="tt">10:00</span>
+        <div id="tbar"><div id="tfill"></div></div>
+      </div>
+      <div class="mfr">
+        <button class="sm-btn danger" onclick="closeModal()">Kill Session</button>
+        <button class="sm-btn" onclick="if(term)term.focus()">Focus</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="confirm-overlay" id="confirmOv">
+  <div class="confirm-box">
+    <h3 id="confirmTitle">Are you sure?</h3>
+    <p id="confirmMsg">This action cannot be undone.</p>
+    <div class="confirm-btns">
+      <button class="btn btn-default" onclick="closeConfirm()">Cancel</button>
+      <button class="btn btn-danger" id="confirmOkBtn">Remove</button>
+    </div>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script>
+const DISTROS = [
+  {id:'ubuntu',   name:'Ubuntu',          icon:'🟠', fam:'debian',      b:'lts',    fallback:false, desc:'Most popular Linux for beginners and developers.',   vers:['24.04','22.04','20.04']},
+  {id:'debian',   name:'Debian',          icon:'🌀', fam:'debian',      b:'stable', fallback:false, desc:'The universal OS. Rock-solid base.',                  vers:['bookworm','bullseye','buster']},
+  {id:'mint',     name:'Linux Mint',      icon:'🌿', fam:'debian',      b:'stable', fallback:true,  desc:'Elegant and easy to use. No native Docker image — runs Ubuntu base.',  vers:['21.3']},
+  {id:'pop',      name:'Pop!_OS',         icon:'🚀', fam:'debian',      b:'stable', fallback:true,  desc:'System76 distro. No native Docker image — runs Ubuntu base.',          vers:['22.04']},
+  {id:'kali',     name:'Kali Linux',      icon:'🐉', fam:'debian',      b:'rolling',fallback:false, desc:'Advanced penetration testing platform.',             vers:['latest']},
+  {id:'parrot',   name:'Parrot OS',       icon:'🦜', fam:'debian',      b:'rolling',fallback:false, desc:'Security distro for pentesting and privacy.',        vers:['latest']},
+  {id:'elementary',name:'elementary OS',  icon:'⬜', fam:'debian',      b:'stable', fallback:true,  desc:'Fast and open. No native Docker image — runs Ubuntu base.',            vers:['7.1']},
+  {id:'zorin',    name:'Zorin OS',        icon:'💠', fam:'debian',      b:'stable', fallback:true,  desc:'Easy to use. No native Docker image — runs Ubuntu base.',              vers:['17.1']},
+  {id:'lubuntu',  name:'Lubuntu',         icon:'🐦', fam:'debian',      b:'stable', fallback:true,  desc:'Lightweight Ubuntu with LXQt. No native Docker image.',               vers:['24.04','22.04']},
+  {id:'kubuntu',  name:'Kubuntu',         icon:'🔵', fam:'debian',      b:'stable', fallback:true,  desc:'Ubuntu with KDE Plasma. No native Docker image.',                     vers:['24.04','22.04']},
+  {id:'xubuntu',  name:'Xubuntu',         icon:'🐭', fam:'debian',      b:'stable', fallback:true,  desc:'Ubuntu with Xfce. No native Docker image.',                           vers:['24.04','22.04']},
+  {id:'raspbian', name:'Raspberry Pi OS', icon:'🍓', fam:'debian',      b:'stable', fallback:true,  desc:'Requires ARM hardware. Runs Debian base in Docker.',                  vers:['bookworm','bullseye']},
+  {id:'mx',       name:'MX Linux',        icon:'⚙️', fam:'debian',      b:'stable', fallback:true,  desc:'No native Docker image — runs Debian base.',                          vers:['23.3']},
+  {id:'deepin',   name:'Deepin',          icon:'🎨', fam:'debian',      b:'stable', fallback:true,  desc:'Beautiful desktop Linux. No native Docker image.',                    vers:['latest']},
+  {id:'arch',     name:'Arch Linux',      icon:'🏔️', fam:'arch',        b:'rolling',fallback:false, desc:'Lightweight and flexible. DIY Linux for purists.',  vers:['latest','base']},
+  {id:'manjaro',  name:'Manjaro',         icon:'🟢', fam:'arch',        b:'rolling',fallback:false, desc:'User-friendly Arch with great hardware support.',   vers:['latest']},
+  {id:'endeavour',name:'EndeavourOS',     icon:'🛸', fam:'arch',        b:'rolling',fallback:false, desc:'Terminal-centric Arch experience made accessible.',  vers:['latest']},
+  {id:'garuda',   name:'Garuda Linux',    icon:'🦅', fam:'arch',        b:'rolling',fallback:false, desc:'Performance-oriented Arch with beautiful aesthetics.',vers:['latest']},
+  {id:'blackarch',name:'BlackArch',       icon:'🖤', fam:'arch',        b:'rolling',fallback:false, desc:'Security and pentesting based on Arch Linux.',       vers:['latest']},
+  {id:'artix',    name:'Artix Linux',     icon:'🎭', fam:'arch',        b:'rolling',fallback:false, desc:'Arch-based systemd-free Linux.',                    vers:['latest']},
+  {id:'fedora',   name:'Fedora',          icon:'🎩', fam:'rpm',         b:'stable', fallback:false, desc:'Cutting-edge features sponsored by Red Hat.',       vers:['40','39','38']},
+  {id:'rhel',     name:'RHEL (UBI)',      icon:'🔴', fam:'rpm',         b:'lts',    fallback:false, desc:'Red Hat Universal Base Image for enterprise.',       vers:['9','8']},
+  {id:'centos',   name:'CentOS Stream',   icon:'🏛️', fam:'rpm',         b:'rolling',fallback:false, desc:'Midstream distribution between Fedora and RHEL.',   vers:['stream9','stream8']},
+  {id:'rocky',    name:'Rocky Linux',     icon:'🪨', fam:'rpm',         b:'lts',    fallback:false, desc:'Community enterprise OS compatible with RHEL.',      vers:['9','8']},
+  {id:'alma',     name:'AlmaLinux',       icon:'🔐', fam:'rpm',         b:'lts',    fallback:false, desc:'Open-source forever RHEL alternative.',              vers:['9','8']},
+  {id:'opensuse_leap',      name:'openSUSE Leap',       icon:'🦎',fam:'rpm',b:'stable', fallback:false,desc:'Regular release from openSUSE.',vers:['15.6','15.5']},
+  {id:'opensuse_tumbleweed',name:'openSUSE Tumbleweed', icon:'🌀',fam:'rpm',b:'rolling',fallback:false,desc:'Rolling release from openSUSE.',vers:['latest']},
+  {id:'mageia',   name:'Mageia',          icon:'🌟', fam:'rpm',         b:'stable', fallback:false, desc:'Community-driven Mandriva Linux fork.',              vers:['9','8']},
+  {id:'oracle',   name:'Oracle Linux',    icon:'🔶', fam:'rpm',         b:'lts',    fallback:false, desc:'Free RHEL-compatible OS by Oracle.',                 vers:['9','8']},
+  {id:'gentoo',   name:'Gentoo',          icon:'🐧', fam:'independent', b:'rolling',fallback:false, desc:'Highly flexible source-based distro.',              vers:['latest']},
+  {id:'slackware',name:'Slackware',       icon:'📜', fam:'independent', b:'stable', fallback:false, desc:'The oldest maintained Linux distribution.',         vers:['current']},
+  {id:'void',     name:'Void Linux',      icon:'⬛', fam:'independent', b:'rolling',fallback:false, desc:'Independent distro with runit and XBPS.',           vers:['latest']},
+  {id:'nixos',    name:'NixOS / Nix',     icon:'❄️', fam:'independent', b:'stable', fallback:false, desc:'Declarative, reproducible Linux.',                  vers:['latest']},
+  {id:'alpine',   name:'Alpine Linux',    icon:'🏔️', fam:'independent', b:'stable', fallback:false, desc:'Security-oriented, lightweight, musl-based.',       vers:['3.20','3.19','3.18','edge']},
+  {id:'tinycore', name:'Tiny Core',       icon:'🔬', fam:'independent', b:'stable', fallback:true,  desc:'No Docker image — runs Alpine Linux (similarly minimal).',            vers:['latest']},
+  {id:'puppy',    name:'Puppy Linux',     icon:'🐶', fam:'independent', b:'stable', fallback:true,  desc:'No Docker image — runs Debian base.',                                 vers:['latest']},
+  {id:'haiku',    name:'Haiku',           icon:'🌸', fam:'independent', b:'beta',   fallback:true,  desc:'Non-Linux OS — CANNOT run in Docker. Runs Ubuntu base.',              vers:['latest']},
+  {id:'clear',    name:'Clear Linux',     icon:'💎', fam:'independent', b:'rolling',fallback:false, desc:'Intel-optimized for maximum performance.',          vers:['latest']},
+  {id:'solus',    name:'Solus',           icon:'☀️', fam:'independent', b:'stable', fallback:true,  desc:'No Docker image — runs Ubuntu base.',                                 vers:['latest']},
+  {id:'guix',     name:'GNU Guix',        icon:'🐃', fam:'independent', b:'stable', fallback:true,  desc:'No standard Docker image — runs Ubuntu base.',                        vers:['latest']},
+  {id:'tails',    name:'Tails',           icon:'👁️', fam:'independent', b:'stable', fallback:true,  desc:'Live OS — CANNOT run in Docker. Runs Debian base.',                   vers:['latest']},
+  {id:'whonix',   name:'Whonix',          icon:'🛡️', fam:'independent', b:'stable', fallback:true,  desc:'Requires two VMs — CANNOT run in Docker. Runs Debian base.',          vers:['latest']},
+  {id:'freebsd',  name:'FreeBSD',         icon:'😈', fam:'bsd',         b:'stable', fallback:true,  desc:'Requires FreeBSD kernel — CANNOT run in Linux Docker. Runs Ubuntu.',  vers:['14','13']},
+  {id:'openbsd',  name:'OpenBSD',         icon:'🐡', fam:'bsd',         b:'stable', fallback:true,  desc:'Requires OpenBSD kernel — CANNOT run in Linux Docker. Runs Ubuntu.',  vers:['7.5','7.4']},
+  {id:'netbsd',   name:'NetBSD',          icon:'🕸️', fam:'bsd',         b:'stable', fallback:true,  desc:'Requires NetBSD kernel — CANNOT run in Linux Docker. Runs Ubuntu.',   vers:['10.0','9.3']},
+  {id:'ghostbsd', name:'GhostBSD',        icon:'👻', fam:'bsd',         b:'rolling',fallback:true,  desc:'FreeBSD-based — CANNOT run in Linux Docker. Runs Ubuntu.',            vers:['latest']},
+  {id:'dragonfly',name:'DragonFly BSD',   icon:'🐉', fam:'bsd',         b:'stable', fallback:true,  desc:'Requires its own kernel — CANNOT run in Linux Docker. Runs Ubuntu.',  vers:['latest']},
+  {id:'truenas',  name:'TrueNAS CORE',    icon:'🗄️', fam:'bsd',         b:'stable', fallback:true,  desc:'FreeBSD-based — CANNOT run in Docker. Runs Ubuntu.',                  vers:['latest']},
+];
+
+const sv = {};
+DISTROS.forEach(d => sv[d.id] = d.vers[0]);
+let filter = 'all';
+let ws, term, fit, cur, tiv;
+const TSEC = 600;
+
+// ── VIEW ──
+function showView(name, btn) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(b => b.classList.remove('active'));
+  document.getElementById('view-'+name).classList.add('active');
+  (btn || document.getElementById('tab-'+name)).classList.add('active');
+  if (name === 'images') loadImages();
+}
+
+// ── WS ──
+function conn() {
+  setStat('');
+  ws = new WebSocket((location.protocol==='https:'?'wss':'ws')+'://'+location.host);
+  ws.onopen  = () => { setStat('on'); fetchInfo(); };
+  ws.onclose = () => { setStat('off'); setTimeout(conn, 3000); };
+  ws.onerror = e => console.error('[ws]', e);
+  ws.onmessage = ({data}) => {
+    let m; try { m=JSON.parse(data); } catch { return; }
+    handle(m);
+  };
+}
+
+// ── PROGRESS STATE ──
+let pullState = { totalBytes:0, currentBytes:0, layers:{} };
+
+function resetProgress() {
+  pullState = { totalBytes:0, currentBytes:0, layers:{} };
+  setProg(3, 'pull', 'Connecting to Docker...', '');
+  document.getElementById('layer-stats').style.display = 'none';
+  document.getElementById('bootlog').innerHTML = '';
+  document.getElementById('fallbackBanner').classList.remove('show');
+}
+
+function setProg(pct, phase, label, right) {
+  const fill = document.getElementById('prog-fill');
+  fill.style.width = pct + '%';
+  fill.className = 'progress-fill ' + phase + (pct < 100 ? ' active' : '');
+  document.getElementById('prog-label').textContent = label;
+  document.getElementById('prog-pct').textContent   = right;
+}
+
+function fmtBytes(b) {
+  if (!b) return '';
+  if (b < 1024) return b + 'B';
+  if (b < 1024*1024) return (b/1024).toFixed(1) + 'KB';
+  return (b/1024/1024).toFixed(1) + 'MB';
+}
+
+function handle(m) {
+  console.log('[msg]', m.type);
+
+  if (m.type === 'launch_info') {
+    document.getElementById('pull-title').textContent = m.image;
+    document.getElementById('pull-sub').textContent   = 'Resolving image...';
+    if (m.fallback && m.note) {
+      document.getElementById('fbTitle').textContent = m.fallbackFor + ' — running substitute image';
+      document.getElementById('fbNote').textContent  = m.note;
+      document.getElementById('fallbackBanner').classList.add('show');
+    }
+    blog('Image: ' + m.image, 'info');
+    if (m.note) blog('Note: ' + m.note, 'warn');
+  }
+
+  else if (m.type === 'pull_status') {
+    blog(m.message, 'dim');
+    document.getElementById('pull-sub').textContent = m.message;
+  }
+
+  else if (m.type === 'pull_progress') {
+    const { layerId, status, pct, currentBytes, totalBytes, layers, phase } = m;
+    document.getElementById('layer-stats').style.display = 'flex';
+
+    if (layers) {
+      document.getElementById('ls-pull').textContent    = layers.pulling    + ' downloading';
+      document.getElementById('ls-extract').textContent = layers.extracting + ' extracting';
+      document.getElementById('ls-done').textContent    = layers.done       + ' complete';
+      document.getElementById('ls-total').textContent   = layers.total      + ' layers';
+    }
+
+    const isExtracting = phase === 'extract' || (layers && layers.extracting > 0);
+    const phaseClass   = isExtracting ? 'extract' : 'pull';
+
+    if (pct !== null && pct !== undefined) {
+      const label = isExtracting ? 'Extracting layers...' : 'Downloading layers...';
+      const sizeInfo = (currentBytes && totalBytes)
+        ? fmtBytes(currentBytes) + ' / ' + fmtBytes(totalBytes)
+        : '';
+      setProg(pct, phaseClass, label, pct + '%' + (sizeInfo ? ' · ' + sizeInfo : ''));
+      document.getElementById('pull-sub').textContent =
+        (isExtracting ? 'Extracting' : 'Downloading') + ' · ' + (layers ? layers.done + '/' + layers.total + ' layers done' : '');
+    }
+  }
+
+  else if (m.type === 'status') {
+    blog(m.message, 'ok');
+    const phaseMap = { pull:'pull', extract:'extract', volume:'done', start:'done' };
+    const phasePct = { pull:10, extract:60, volume:92, start:97 };
+    const ph = m.phase || 'pull';
+    if (ph !== 'pull') setProg(phasePct[ph] || 95, phaseMap[ph] || 'done', m.message, '');
+    document.getElementById('pull-sub').textContent = m.message;
+  }
+
+  else if (m.type === 'ready') {
+    cur.sid = m.sessionId;
+    setProg(100, 'done', 'Container ready', '100%');
+    blog('Container ready — ' + m.image, 'ok');
+    blog('Volume /workspace mounted', 'dim');
+    if (m.note) blog('⚠ ' + m.note, 'warn');
+    setTimeout(openTerm, 500);
+    startTimer();
+  }
+
+  else if (m.type === 'output') {
+    if (!term) return;
+    const s=m.data, b=new Uint8Array(s.length);
+    for (let i=0;i<s.length;i++) b[i]=s.charCodeAt(i)&0xff;
+    term.write(b);
+  }
+
+  else if (m.type === 'timeout') { toast('Session timed out','err'); closeModal(); }
+  else if (m.type === 'exit')    { if(term) term.write('\r\n\x1b[33m[session ended]\x1b[0m\r\n'); }
+  else if (m.type === 'killed')  { closeModal(); }
+  else if (m.type === 'error')   { blog('ERROR: '+m.message,'err'); setProg(0,'pull','Error',''); toast(m.message,'err'); }
+}
+
+function blog(t,c='dim') {
+  const el=document.getElementById('bootlog');
+  const d=document.createElement('div');
+  d.className=c; d.textContent=t;
+  el.appendChild(d); el.scrollTop=el.scrollHeight;
+}
+
+function openTerm() {
+  document.getElementById('pull-section').classList.add('hidden');
+  const tw=document.getElementById('tw');
+  tw.classList.add('show');
+
+  if (!term) {
+    term = new Terminal({
+      fontFamily:"'DM Mono','Courier New',monospace",
+      fontSize:13, lineHeight:1.35, cursorBlink:true, cursorStyle:'block', scrollback:5000,
+      theme:{
+        background:'#0d0d0d', foreground:'#d4d4d4', cursor:'#ffffff', cursorAccent:'#000',
+        selectionBackground:'rgba(255,255,255,.15)',
+        black:'#1e1e1e',red:'#f44747',green:'#6a9955',yellow:'#dcdcaa',
+        blue:'#569cd6',magenta:'#c678dd',cyan:'#4ec9b0',white:'#d4d4d4',
+        brightBlack:'#555',brightRed:'#f44747',brightGreen:'#6a9955',
+        brightYellow:'#dcdcaa',brightBlue:'#569cd6',brightMagenta:'#c678dd',
+        brightCyan:'#4ec9b0',brightWhite:'#ffffff',
+      },
+    });
+    fit = new FitAddon.FitAddon();
+    term.loadAddon(fit);
+    term.open(tw);
+    setTimeout(() => {
+      fit.fit();
+      if (cur?.sid && ws?.readyState===1)
+        ws.send(JSON.stringify({type:'resize',rows:term.rows,cols:term.cols,sessionId:cur.sid}));
+      term.focus();
+    }, 100);
+    term.onData(d => {
+      if (ws?.readyState===1 && cur?.sid)
+        ws.send(JSON.stringify({type:'input',data:d,sessionId:cur.sid}));
+    });
+    new ResizeObserver(() => {
+      if(!fit||!term) return;
+      fit.fit();
+      if(ws?.readyState===1 && cur?.sid)
+        ws.send(JSON.stringify({type:'resize',rows:term.rows,cols:term.cols,sessionId:cur.sid}));
+    }).observe(tw);
+  } else {
+    setTimeout(() => { fit.fit(); term.focus(); }, 100);
+  }
+}
+
+function startTimer() {
+  clearInterval(tiv);
+  document.getElementById('timer').style.display='flex';
+  const t0=Date.now();
+  tiv=setInterval(()=>{
+    const r=TSEC-Math.floor((Date.now()-t0)/1000);
+    if(r<=0){clearInterval(tiv);return;}
+    const m=Math.floor(r/60),s=r%60;
+    document.getElementById('tt').textContent=m+':'+(s<10?'0':'')+s;
+    document.getElementById('tfill').style.width=(r/TSEC*100)+'%';
+    document.getElementById('tfill').style.background=r<60?'#dc2626':r<180?'#d97706':'var(--green)';
+  },1000);
+}
+
+function setStat(s) {
+  document.getElementById('sdot').className='sdot'+(s==='on'?' on':s==='off'?' off':'');
+  document.getElementById('stxt').textContent={on:'online',off:'offline'}[s]||'connecting';
+}
+
+async function fetchInfo() {
+  try {
+    const r=await fetch('/api/sessions');
+    const d=await r.json();
+    document.getElementById('scnt').textContent=d.count+'/'+d.max+' sessions';
+  } catch{}
+}
+
+// ── LAUNCH ──
+function launch(e, id) {
+  e.stopPropagation();
+  if(!ws||ws.readyState!==1){toast('Server offline','err');return;}
+  const dist=DISTROS.find(x=>x.id===id); if(!dist) return;
+  const ver=sv[id]||dist.vers[0];
+  cur={distro:dist, version:ver, sid:null};
+
+  document.getElementById('mtitle').textContent=dist.name+' — '+ver;
+  document.getElementById('micon').textContent=dist.icon;
+  document.getElementById('mdn').textContent=dist.name;
+  document.getElementById('mdv').textContent=ver+' · '+dist.fam;
+  document.getElementById('timer').style.display='none';
+  document.getElementById('tfill').style.background='var(--green)';
+  document.getElementById('pull-icon').textContent=dist.icon;
+  document.getElementById('pull-title').textContent='Pulling '+dist.name+'…';
+
+  resetProgress();
+  document.getElementById('pull-section').classList.remove('hidden');
+  document.getElementById('tw').classList.remove('show');
+  if(term){term.dispose();term=null;fit=null;}
+  document.getElementById('ov').classList.add('show');
+
+  ws.send(JSON.stringify({type:'launch',distro:id,version:ver}));
+  fetchInfo();
+}
+
+function restart() {
+  if(!cur) return;
+  if(term){term.dispose();term=null;fit=null;}
+  clearInterval(tiv);
+  resetProgress();
+  document.getElementById('pull-section').classList.remove('hidden');
+  document.getElementById('tw').classList.remove('show');
+  blog('Restarting...','warn');
+  ws.send(JSON.stringify({type:'launch',distro:cur.distro.id,version:cur.version}));
+}
+
+function closeModal() {
+  if(ws?.readyState===1&&cur?.sid) ws.send(JSON.stringify({type:'kill',sessionId:cur.sid}));
+  document.getElementById('ov').classList.remove('show');
+  clearInterval(tiv);
+  setTimeout(()=>{
+    if(term){term.dispose();term=null;fit=null;}
+    document.getElementById('pull-section').classList.remove('hidden');
+    document.getElementById('tw').classList.remove('show');
+    cur=null;
+  },200);
+  fetchInfo();
+}
+
+// ── GRID ──
+function selVer(e,id,v) {
+  e.stopPropagation(); sv[id]=v;
+  e.target.closest('.ver-row').querySelectorAll('.vchip').forEach(c=>c.classList.remove('on'));
+  e.target.classList.add('on');
+}
+
+function filtered() {
+  const q=document.getElementById('q').value.toLowerCase();
+  return DISTROS.filter(d=>{
+    const mf=filter==='all'?true:filter==='lts'?d.b==='lts':filter==='rolling'?d.b==='rolling':d.fam===filter;
+    const ms=!q||d.name.toLowerCase().includes(q)||d.fam.includes(q)||d.desc.toLowerCase().includes(q)||d.vers.some(v=>v.includes(q));
+    return mf&&ms;
+  });
+}
+
+function render() {
+  const list=filtered();
+  document.getElementById('cnt').textContent=list.length;
+  document.getElementById('h-count').textContent=list.length;
+  const g=document.getElementById('grid'), e=document.getElementById('empty');
+  if(!list.length){g.innerHTML='';e.style.display='block';return;}
+  e.style.display='none';
+  g.innerHTML=list.map((d,i)=>`
+    <div class="card" style="animation-delay:${i*.016}s">
+      <div class="card-head">
+        <div class="card-logo">${d.icon}</div>
+        <span class="badge b-${d.b}">${d.b}</span>
+      </div>
+      <div class="card-name">${d.name}</div>
+      <div class="card-fam">
+        ${d.fam}
+        ${d.fallback?'<span class="fallback-tag">emulated</span>':''}
+      </div>
+      <div class="card-desc">${d.desc}</div>
+      <div class="ver-row">
+        <span class="ver-lbl">Version</span>
+        ${d.vers.slice(0,4).map((v,i)=>`<button class="vchip${i===0?' on':''}" onclick="selVer(event,'${d.id}','${v}')">${v}</button>`).join('')}
+      </div>
+      <button class="launch-btn" onclick="launch(event,'${d.id}')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+        Launch Terminal
+      </button>
+    </div>`).join('');
+}
+
+document.getElementById('q').addEventListener('input',render);
+document.querySelectorAll('.fchip').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('.fchip').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); filter=b.dataset.f; render();
+}));
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!document.getElementById('confirmOv').classList.contains('show'))closeModal();});
+document.getElementById('ov').addEventListener('click',e=>{if(e.target===document.getElementById('ov'))closeModal();});
+
+// ── IMAGE MANAGER ──
+function fmt(b){if(!b)return'0B';if(b<1024)return b+'B';if(b<1048576)return(b/1024).toFixed(1)+'KB';if(b<1073741824)return(b/1048576).toFixed(1)+'MB';return(b/1073741824).toFixed(2)+'GB';}
+function timeAgo(ts){const s=Math.floor(Date.now()/1000-ts);if(s<60)return s+'s ago';if(s<3600)return Math.floor(s/60)+'m ago';if(s<86400)return Math.floor(s/3600)+'h ago';return Math.floor(s/86400)+'d ago';}
+
+async function loadImages() {
+  document.getElementById('imgRows').innerHTML='<div class="img-empty"><p>Loading...</p></div>';
+  try {
+    const r=await fetch('/api/images'), d=await r.json();
+    renderImages(d.images||[]);
+  } catch(e) {
+    document.getElementById('imgRows').innerHTML='<div class="img-empty"><p style="color:var(--red)">Failed: '+e.message+'</p></div>';
+  }
+}
+
+function renderImages(imgs) {
+  const total=imgs.reduce((a,i)=>a+i.size,0);
+  const inUse=imgs.filter(i=>i.inUse).length;
+  const inUseSize=imgs.filter(i=>i.inUse).reduce((a,i)=>a+i.size,0);
+  document.getElementById('img-total-size').textContent=fmt(total);
+  document.getElementById('img-count').textContent=imgs.length;
+  document.getElementById('img-in-use').textContent=inUse;
+  document.getElementById('storageFill').style.width=total>0?(inUseSize/total*100)+'%':'0%';
+  if(!imgs.length){
+    document.getElementById('imgRows').innerHTML='<div class="img-empty"><p>No Docker images found.</p></div>';
+    return;
+  }
+  document.getElementById('imgRows').innerHTML=imgs.map(img=>{
+    const tag=(img.tags[0]||'<none>:<none>');
+    return`<div class="img-row">
+      <div><div class="img-tag">${tag}</div>${img.tags.length>1?`<div style="font-size:10px;color:var(--text3);margin-top:2px">+${img.tags.length-1} more</div>`:''}</div>
+      <div class="img-id">${img.id}</div>
+      <div class="img-size">${fmt(img.size)}</div>
+      <div class="img-date">${timeAgo(img.created)}</div>
+      <div>${img.inUse?'<span class="in-use-badge">In Use</span>':`<button class="btn btn-danger" style="padding:4px 10px;font-size:11px" onclick="confirmRemove('${img.fullId}','${tag}')">Remove</button>`}</div>
+    </div>`;
+  }).join('');
+}
+
+function openConfirm(title,msg,cb){
+  document.getElementById('confirmTitle').textContent=title;
+  document.getElementById('confirmMsg').textContent=msg;
+  document.getElementById('confirmOkBtn').onclick=()=>{closeConfirm();cb();};
+  document.getElementById('confirmOv').classList.add('show');
+}
+function closeConfirm(){document.getElementById('confirmOv').classList.remove('show');}
+function confirmRemove(fullId,tag){openConfirm('Remove image?',`Remove "${tag}"? This frees disk space and cannot be undone.`,()=>removeImage(fullId,tag));}
+function confirmPruneAll(){openConfirm('Remove all unused images?','Remove every image not used by an active session. They will be re-pulled next time.',()=>pruneAll());}
+
+async function removeImage(fullId,tag){
+  try{const r=await fetch('/api/images/'+encodeURIComponent(fullId),{method:'DELETE'});const d=await r.json();if(!r.ok)throw new Error(d.error);toast('Removed: '+tag,'ok');loadImages();}
+  catch(e){toast('Error: '+e.message,'err');}
+}
+async function pruneAll(){
+  try{const r=await fetch('/api/images',{method:'DELETE'});const d=await r.json();if(!r.ok)throw new Error(d.error);toast(`Removed ${d.removed?.length||0} images · Freed ${fmt(d.freedBytes||0)}`,'ok');loadImages();}
+  catch(e){toast('Error: '+e.message,'err');}
+}
+
+function toast(msg,type=''){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.className='toast show'+(type?' '+type:'');
+  setTimeout(()=>t.classList.remove('show'),3500);
+}
+
+render(); conn(); setInterval(fetchInfo,15000);
+</script>
+</body>
+</html>
